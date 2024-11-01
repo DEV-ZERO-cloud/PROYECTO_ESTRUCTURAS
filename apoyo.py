@@ -1,134 +1,162 @@
 import time
 import os
-
-# Nota: x = columnas , y  = filas
-"""Class Tipos de movimiento: Ilustrativo
-    (0,0) ->quieto
-    (0,1) ->derecha
-    (0,-1) ->izquierda
-    (1,0) ->abajo
-    (-1,0) ->arriba
-    (1,1) ->diagonal derecha hacia abajo
-    (1,-1) ->diagonal izquierda hacia abajo
-    (-1,1) ->diagonal derecha hacia arriba
-    (-1,-1) ->diagonal izquierda hacia arriba
-##"""
+from collections import deque
 
 class TipoObjeto:
-    VACIO = 0
-    OBSTACULO = 1
-    ESPEJO = 2
-    LUZ = 3
+    VACIO = " "
+    OBSTACULO = "■"  # Obstáculo oculto
+    ESPEJO_DIAGONAL1 = "/"
+    ESPEJO_DIAGONAL2 = "\\"
+    ESPEJO_HORIZONTAL = "─"
+    ESPEJO_VERTICAL = "│"
+    LUZ = "☀"
+    META = "★"
 
-class TipoEspejo:
-    DIAGONAL1 = 1  # Representa `/`
-    DIAGONAL2 = 2  # Representa `\`
-    LATERAL1 = 3   # Representaa '__'
-    LATERAL2 = 4   # Representaa '|'
-
-class Objeto:
-    def __init__(self, x, y, tipo):
+class Accion:
+    def __init__(self, tipo_espejo, x, y):
+        self.tipo_espejo = tipo_espejo
         self.x = x
         self.y = y
-        self.tipo = tipo
+        self.timestamp = time.strftime("%H:%M:%S")
 
-class Tablero:
-    def __init__(self, filas, columnas):
-        self.filas = filas
-        self.columnas = columnas
-        self.matriz = [[Objeto(x, y, TipoObjeto.VACIO) for y in range(columnas)] for x in range(filas)]
+    def __str__(self):
+        return f"[{self.timestamp}] Colocado espejo tipo {self.tipo_espejo} en ({self.x}, {self.y})"
 
-    def colocar_objeto(self, x, y, objeto):
-        self.matriz[x][y] = objeto
+class Juego:
+    def __init__(self, tamano=10):
+        self.tamano = tamano
+        self.tablero = [[TipoObjeto.VACIO] * tamano for _ in range(tamano)]
+        self.tablero_oculto = [[TipoObjeto.VACIO] * tamano for _ in range(tamano)]
+        self.historial = deque()
+        self.pos_luz = (0, 0)
+        self.dir_luz = (1, 0)  # Dirección inicial hacia abajo
+        self.pos_meta = (tamano-1, tamano-1)
+        self.configurar_nivel()
 
-    def obtener_objeto(self, x, y):
-        return self.matriz[x][y]
-    
-    def mostrar_tablero(self):
-        # Limpia la consola antes de mostrar el tablero
-        os.system('cls' if os.name == 'nt' else 'clear')
+    def configurar_nivel(self):
+        # Colocar luz inicial
+        self.tablero[self.pos_luz[0]][self.pos_luz[1]] = TipoObjeto.LUZ
         
-        for i in range(self.filas):
-            for j in range(self.columnas):
-                obj = self.matriz[i][j]
-                if obj.tipo == TipoObjeto.ESPEJO:
-                    if obj.tipo_espejo == TipoEspejo.DIAGONAL1: 
-                        print("|", "/", end="|")
-                    elif obj.tipo_espejo == TipoEspejo.DIAGONAL2: 
-                        print("|", "\\", end="|")
-                    elif obj.tipo_espejo == TipoEspejo.LATERAL1: 
-                        print("|", "_", end="|")
-                    elif obj.tipo_espejo == TipoEspejo.LATERAL2: 
-                        print("|", "|", end="|")
-                elif obj.tipo == TipoObjeto.OBSTACULO:
-                    print("|", "OB", end="|")
-                elif obj.tipo == TipoObjeto.LUZ:
-                    print("|", "L", end="|")
-                else:
-                    print("|", " ", end="|")
+        # Colocar meta
+        self.tablero[self.pos_meta[0]][self.pos_meta[1]] = TipoObjeto.META
+        
+        # Colocar obstáculos aleatorios (ocultos)
+        import random
+        num_obstaculos = self.tamano // 2
+        for _ in range(num_obstaculos):
+            x, y = random.randint(1, self.tamano-2), random.randint(1, self.tamano-2)
+            if (x, y) != self.pos_luz and (x, y) != self.pos_meta:
+                self.tablero_oculto[x][y] = TipoObjeto.OBSTACULO
+
+    def mostrar_tablero(self):
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print("\nEje X →")
+        print("    " + " ".join([f"{i:2}" for i in range(self.tamano)]))
+        print("   " + "─" * (self.tamano * 3 + 1))
+        for i in range(self.tamano):
+            print(f"Y{i:2}│", end=" ")
+            for j in range(self.tamano):
+                print(f"{self.tablero[i][j]:2}", end=" ")
             print()
-        time.sleep(0.5)  # Pausa de 0.5 segundos para simular movimiento en tiempo real
+        print()
 
-class Espejo(Objeto):
-    def __init__(self, x, y, tipo_espejo):
-        super().__init__(x, y, TipoObjeto.ESPEJO)
-        self.tipo_espejo = tipo_espejo
+    def colocar_espejo(self, x, y, tipo):
+        if not (0 <= y < self.tamano and 0 <= x < self.tamano):
+            return False, "Posición fuera del tablero"
+        
+        if self.tablero[y][x] != TipoObjeto.VACIO:
+            return False, "Posición ocupada"
 
-class Obstaculo(Objeto):
-    def __init__(self, x, y):
-        super().__init__(x, y, TipoObjeto.OBSTACULO)
+        simbolos = {
+            1: TipoObjeto.ESPEJO_DIAGONAL1,
+            2: TipoObjeto.ESPEJO_DIAGONAL2,
+            3: TipoObjeto.ESPEJO_HORIZONTAL,
+            4: TipoObjeto.ESPEJO_VERTICAL
+        }
+        
+        self.tablero[y][x] = simbolos[tipo]
+        self.historial.append(Accion(tipo, x, y))
+        return True, "Espejo colocado exitosamente"
 
-class Luz(Objeto):
-                #(px,py, arriba_abajo,izquierda o derecha)
-                #direccion = 0, significa que no se mueve
-    def __init__(self, x, y, direccion_x, direccion_y):
-        super().__init__(x, y, TipoObjeto.LUZ)
-        self.direccion_x = direccion_x
-        self.direccion_y = direccion_y
-
-    def detectar_choque(self, tablero):
-        # Calcular la posición hacia la cual se moverá la luz
-        proxima_x = self.x + self.direccion_x
-        proxima_y = self.y + self.direccion_y
-
-        # Comprobar si está dentro de los límites del tablero
-        if not (0 <= proxima_x < tablero.filas and 0 <= proxima_y < tablero.columnas):
-            print(f"La luz ha salido del tablero en la posición ({self.x}, {self.y})")
-            return True
-
-        objeto = tablero.obtener_objeto(proxima_x, proxima_y)
-        if objeto.tipo == TipoObjeto.ESPEJO:
-            print(f"La luz ha chocado con un espejo en ({proxima_y}, {proxima_x})")
-            # Reflexión dependiendo del tipo de espejo
-            if objeto.tipo_espejo == TipoEspejo.DIAGONAL1:  # `/`
-                self.direccion_x, self.direccion_y = -self.direccion_y, -self.direccion_x
-            elif objeto.tipo_espejo == TipoEspejo.DIAGONAL2:  # `\`
-                self.direccion_x, self.direccion_y = self.direccion_y, self.direccion_x
-            elif objeto.tipo_espejo == TipoEspejo.LATERAL1:  # `__`
-                self.direccion_x, self.direccion_y = -self.direccion_x, self.direccion_y
-            elif objeto.tipo_espejo == TipoEspejo.LATERAL2:  # `|`
-                self.direccion_x, self.direccion_y = self.direccion_x, -self.direccion_y
-            return False
-        elif objeto.tipo == TipoObjeto.OBSTACULO:
-            print(f"La luz ha chocado con un obstáculo en ({proxima_y}, {proxima_x})")
-            return True
-        return False
-    
-    def viajar_luz(self, tablero):
+    def simular_luz(self):
+        x, y = self.pos_luz
+        dx, dy = self.dir_luz
+        camino = [(x, y)]
+        
         while True:
-            if self.detectar_choque(tablero):
+            nuevo_x, nuevo_y = x + dx, y + dy
+            
+            # Verificar límites del tablero
+            if not (0 <= nuevo_x < self.tamano and 0 <= nuevo_y < self.tamano):
+                print("¡La luz llegó al límite del tablero!")
                 break
-
-            # Actualizar la posición de la luz en el tablero
-            tablero.colocar_objeto(self.x, self.y, Objeto(self.x, self.y, TipoObjeto.VACIO))  # Limpia la posición actual
-
-            # Mueve la luz en la dirección asignada
-            self.x += self.direccion_x
-            self.y += self.direccion_y
-
-            # Coloca la luz en la nueva posición y muestra el tablero
-            tablero.colocar_objeto(self.x, self.y, self)
-            tablero.mostrar_tablero()
-
-            # Pausa para visualización
+                
+            # Verificar obstáculos ocultos
+            if self.tablero_oculto[nuevo_x][nuevo_y] == TipoObjeto.OBSTACULO:
+                print("¡La luz chocó con un obstáculo oculto! Intenta de nuevo.")
+                return False
+                
+            # Verificar meta
+            if (nuevo_x, nuevo_y) == self.pos_meta:
+                print("¡Felicitaciones! ¡Has alcanzado la meta!")
+                return True
+                
+            # Verificar espejos y actualizar dirección
+            celda = self.tablero[nuevo_x][nuevo_y]
+            if celda in [TipoObjeto.ESPEJO_DIAGONAL1, TipoObjeto.ESPEJO_DIAGONAL2,
+                        TipoObjeto.ESPEJO_HORIZONTAL, TipoObjeto.ESPEJO_VERTICAL]:
+                if celda == TipoObjeto.ESPEJO_DIAGONAL1:    # /
+                    dx, dy = -dy, -dx
+                elif celda == TipoObjeto.ESPEJO_DIAGONAL2:  # \
+                    dx, dy = dy, dx
+                elif celda == TipoObjeto.ESPEJO_HORIZONTAL: # ─
+                    dx = -dx
+                elif celda == TipoObjeto.ESPEJO_VERTICAL:   # │
+                    dy = -dy
+                    
+            x, y = nuevo_x, nuevo_y
+            camino.append((x, y))
+            
+            # Visualizar el movimiento
+            self.mostrar_movimiento(camino)
             time.sleep(0.5)
+
+    def mostrar_movimiento(self, camino):
+        tablero_temp = [fila[:] for fila in self.tablero]
+        for x, y in camino[:-1]:
+            if tablero_temp[x][y] == TipoObjeto.LUZ:
+                tablero_temp[x][y] = "·"
+        x, y = camino[-1]
+        tablero_temp[x][y] = TipoObjeto.LUZ
+        
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print("\n  " + " ".join([f"{i:2}" for i in range(self.tamano)]))
+        for i in range(self.tamano):
+            print(f"{i:2}", end=" ")
+            for j in range(self.tamano):
+                print(f"{tablero_temp[i][j]:2}", end=" ")
+            print()
+        print()
+
+    def mostrar_historial(self):
+        print("\nHistorial de acciones:")
+        for accion in self.historial:
+            print(accion)
+
+    def configurar_nivel_personalizado(self, pos_luz, dir_luz, pos_meta, obstaculos):
+        # Reiniciar tablero
+        self.tablero = [[TipoObjeto.VACIO] * self.tamano for _ in range(self.tamano)]
+        self.tablero_oculto = [[TipoObjeto.VACIO] * self.tamano for _ in range(self.tamano)]
+        
+        # Configurar posición inicial de la luz
+        self.pos_luz = pos_luz
+        self.dir_luz = dir_luz
+        self.tablero[pos_luz[0]][pos_luz[1]] = TipoObjeto.LUZ
+        
+        # Configurar meta
+        self.pos_meta = pos_meta
+        self.tablero[pos_meta[0]][pos_meta[1]] = TipoObjeto.META
+        
+        # Colocar obstáculos
+        for obs_y, obs_x in obstaculos:
+            self.tablero_oculto[obs_y][obs_x] = TipoObjeto.OBSTACULO
